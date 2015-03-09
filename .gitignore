@@ -1,5 +1,6 @@
 build/
-karman.bin
+*.bin
+*.ppm
 karman
 diffbin
 bin2ppm
