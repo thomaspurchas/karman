@@ -16,7 +16,7 @@ void write_bin(float **u, float **v, float **p, char **flag,
      int gimax, int gjmax, float xlength, float ylength, char *file);
 
 int read_bin(float **u, float **v, float **p, char **flag,
-    int imax, int jmax, float xlength, float ylength, char *file,
+    int gimax, int gjmax, float xlength, float ylength, char *file,
     int ileft, int iright);
 
 void send_matrix(void *matrix, MPI_Datatype type, int imax,
@@ -181,6 +181,7 @@ int main(int argc, char *argv[])
         
     if (init_case > 0) {
         /* Error while reading file */
+        MPI_Finalize();
         return 1;
     }
 
@@ -245,7 +246,7 @@ int main(int argc, char *argv[])
 
 /* Save the simulation state to a file */
 void write_bin(float **u, float **v, float **p, char **flag,
-    int imax, int jmax, float xlength, float ylength, char* file)
+    int gimax, int gjmax, float xlength, float ylength, char* file)
 {
     int i;
     FILE *fp;
@@ -258,16 +259,16 @@ void write_bin(float **u, float **v, float **p, char **flag,
         return;
     }
 
-    fwrite(&imax, sizeof(int), 1, fp);
-    fwrite(&jmax, sizeof(int), 1, fp);
+    fwrite(&gimax, sizeof(int), 1, fp);
+    fwrite(&gjmax, sizeof(int), 1, fp);
     fwrite(&xlength, sizeof(float), 1, fp);
     fwrite(&ylength, sizeof(float), 1, fp);
 
-    for (i=0;i<imax+2;i++) {
-        fwrite(u[i], sizeof(float), jmax+2, fp);
-        fwrite(v[i], sizeof(float), jmax+2, fp);
-        fwrite(p[i], sizeof(float), jmax+2, fp);
-        fwrite(flag[i], sizeof(char), jmax+2, fp);
+    for (i=0;i<gimax+2;i++) {
+        fwrite(u[i], sizeof(float), gjmax+2, fp);
+        fwrite(v[i], sizeof(float), gjmax+2, fp);
+        fwrite(p[i], sizeof(float), gjmax+2, fp);
+        fwrite(flag[i], sizeof(char), gjmax+2, fp);
     }
     fclose(fp);
 }
@@ -310,19 +311,21 @@ int read_bin(float **u, float **v, float **p, char **flag,
             return 1;
         }
 
-        int perproc = gimax / nprocs;
-        int diff = gimax - (perproc * nprocs);
+        int perproc = (gimax + 1)/ nprocs;
+        int diff = (gimax + 1) - (perproc * nprocs);
         int offset, byteoffset = 0;
 
         /* Calculate the offset in bytes for proc = 1 */
-        offset = i*perproc + diff;
-        byteoffset += offset * (sizeof(float) * 3);
-        byteoffset += offset * (sizeof(char) * 1);
+        byteoffset = diff;
+        byteoffset += perproc * (sizeof(float) * (gjmax+2) * 3);
+        byteoffset += perproc * (sizeof(char) * (gjmax+2) * 1);
         /* Seek to offset */
-        fseek(fp, byteoffset, SEEK_SET);
-
+        offset = ftell(fp);
+        fseek(fp, byteoffset, SEEK_CUR);
+        fprintf(stderr, "Perproc is %d\n", perproc);
         /* Read in data for each process, starting at proc 1 */
-        for (i=1; i<nprocs; i++) {
+        for (i=0; i<nprocs; i++) {
+            fprintf(stderr, "Read from %d to",  ftell(fp));
             for (j=0; j<perproc; j++) {
                 fread(u[j], sizeof(float), gjmax+2, fp);
                 fread(v[j], sizeof(float), gjmax+2, fp);
@@ -334,6 +337,7 @@ int read_bin(float **u, float **v, float **p, char **flag,
                 send_matrix(p, MPI_FLOAT, perproc, gjmax, i);
                 send_matrix(flag, MPI_CHAR, perproc, gjmax, i);
             }
+            fprintf(stderr, " %d\n", ftell(fp));
         }
         fclose(fp);
         fprintf(stderr, "Proc %d has imax %d\n", proc, perproc + diff);
@@ -346,7 +350,7 @@ int read_bin(float **u, float **v, float **p, char **flag,
         receive_matrix(p, MPI_FLOAT, imax, gjmax, 0);
         receive_matrix(flag, MPI_CHAR, imax, gjmax, 0);
 
-        fprintf(stderr, "Proc %d has imax %d\n", proc, imax);
+        // fprintf(stderr, "Proc %d has imax %d\n", proc, imax);
     }  
 }
 
