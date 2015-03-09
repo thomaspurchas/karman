@@ -9,6 +9,8 @@
 #include "init.h"
 #include "simulation.h"
 
+#include "mpi.h"
+
 void write_bin(float **u, float **v, float **p, char **flag,
      int imax, int jmax, float xlength, float ylength, char *file);
 
@@ -24,7 +26,7 @@ static char *progname;
 int proc = 0;                       /* Rank of the current process */
 int nprocs = 0;                /* Number of processes in communicator */
 
-int *ileft, *iright;           /* Array bounds for each processor */
+int ileft, iright;           /* Array bounds for each processor */
 
 #define PACKAGE "karman"
 #define VERSION "1.0"
@@ -76,6 +78,12 @@ int main(int argc, char *argv[])
     char  **flag;
     int init_case, iters = 0;
     int show_help = 0, show_usage = 0, show_version = 0;
+
+
+    /* Before doing any argument processing, let MPI do it's thing */
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &proc);
 
     progname = argv[0];
     infile = strdup("karman.bin");
@@ -137,9 +145,14 @@ int main(int argc, char *argv[])
     delx = xlength/imax;
     dely = ylength/jmax;
 
+    /* Calculate block partitions */
+    partition(nprocs, imax, &ileft, &iright);
+    /* Calculate new imax for this process */
+    imax = iright - ileft;
+
     /* Allocate arrays */
-    u    = alloc_floatmatrix(imax+2, jmax+2);
     v    = alloc_floatmatrix(imax+2, jmax+2);
+    u    = alloc_floatmatrix(imax+2, jmax+2);
     f    = alloc_floatmatrix(imax+2, jmax+2);
     g    = alloc_floatmatrix(imax+2, jmax+2);
     p    = alloc_floatmatrix(imax+2, jmax+2);
@@ -211,6 +224,9 @@ int main(int argc, char *argv[])
     free_matrix(p);
     free_matrix(rhs);
     free_matrix(flag);
+
+    /* Before we exit, let MPI finish */
+    MPI_Finalize();
 
     return 0;
 }

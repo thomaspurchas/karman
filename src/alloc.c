@@ -46,3 +46,17 @@ void free_matrix(void *m)
     free(els[0]);   /* Deallocate the block of array elements */
     free(m);        /* Deallocate the block of column pointers */
 }
+
+/* Calcualates the number of blocks, and their respective widths
+   Returns the start and stop index of block
+ */
+void partition(int nprocs, int imax, int *ileft, int *iright)
+{
+    if (nprocs < 2) {
+        *ileft = 0;
+        *iright = imax;
+        return;
+    } else {
+
+    }
+}
