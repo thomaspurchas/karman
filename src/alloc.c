@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 
 /* Allocate memory for a rows*cols array of floats.
  * The elements within a column are contiguous in memory, and columns
@@ -50,13 +51,25 @@ void free_matrix(void *m)
 /* Calcualates the number of blocks, and their respective widths
    Returns the start and stop index of block
  */
-void partition(int nprocs, int imax, int *ileft, int *iright)
+void partition(int proc, int nprocs, int imax,
+    int *ileft, int *iright)
 {
     if (nprocs < 2) {
         *ileft = 0;
         *iright = imax;
         return;
     } else {
+        imax += 1;
+        int perproc = imax / nprocs;
+        int diff = imax - (perproc * nprocs);
 
+        fprintf(stderr, "Perproc is %d. Diff is %d. imax is %d\n", perproc, diff, imax);
+
+        *ileft = (proc * perproc) + diff;
+        *iright = ((proc * perproc) + perproc - 1) + diff;
+
+        if (proc == 0) {
+            *ileft = 0;
+        }
     }
 }

@@ -3,19 +3,26 @@
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
+
+#include "mpi.h"
+
 #include "alloc.h"
 #include "boundary.h"
 #include "datadef.h"
 #include "init.h"
 #include "simulation.h"
 
-#include "mpi.h"
-
 void write_bin(float **u, float **v, float **p, char **flag,
-     int imax, int jmax, float xlength, float ylength, char *file);
+     int gimax, int gjmax, float xlength, float ylength, char *file);
 
 int read_bin(float **u, float **v, float **p, char **flag,
-    int imax, int jmax, float xlength, float ylength, char *file);
+    int imax, int jmax, float xlength, float ylength, char *file,
+    int ileft, int iright);
+
+void send_matrix(void *matrix, MPI_Datatype type, int imax,
+    int jmax, int to);
+void receive_matrix(void *matrix, MPI_Datatype type, int imax, 
+    int jmax, int from);
 
 static void print_usage(void);
 static void print_version(void);
@@ -51,8 +58,11 @@ int main(int argc, char *argv[])
     int verbose = 1;          /* Verbosity level */
     float xlength = 22.0;     /* Width of simulated domain */
     float ylength = 4.1;      /* Height of simulated domain */
-    int imax = 660;           /* Number of cells horizontally */
-    int jmax = 120;           /* Number of cells vertically */
+    int gimax = 660;          /* Number of global cells horizontally */
+    int gjmax = 120;          /* Number of global cells vertically */
+    int imax = gimax;         /* Number of local cells horizontally */
+    int jmax = gjmax;         /* Number of local cells vertically */
+
 
     char *infile;             /* Input raw initial conditions */
     char *outfile;            /* Output raw simulation results */
@@ -146,9 +156,11 @@ int main(int argc, char *argv[])
     dely = ylength/jmax;
 
     /* Calculate block partitions */
-    partition(nprocs, imax, &ileft, &iright);
+    partition(proc, nprocs, imax, &ileft, &iright);
+
     /* Calculate new imax for this process */
     imax = iright - ileft;
+    fprintf(stderr, "ileft is %d. iright is %d. imax is %d\n", ileft, iright, imax);
 
     /* Allocate arrays */
     v    = alloc_floatmatrix(imax+2, jmax+2);
@@ -165,7 +177,7 @@ int main(int argc, char *argv[])
     }
 
     /* Read in initial values from a file if it exists */
-    init_case = read_bin(u, v, p, flag, imax, jmax, xlength, ylength, infile);
+    init_case = read_bin(u, v, p, flag, gimax, gjmax, xlength, ylength, infile, ileft, iright);
         
     if (init_case > 0) {
         /* Error while reading file */
@@ -262,48 +274,88 @@ void write_bin(float **u, float **v, float **p, char **flag,
 
 /* Read the simulation state from a file */
 int read_bin(float **u, float **v, float **p, char **flag,
-    int imax, int jmax, float xlength, float ylength, char* file)
+    int gimax, int gjmax, float xlength, float ylength, char* file,
+    int ileft, int iright)
 {
-    int i,j;
-    FILE *fp;
+    if (proc == 0) {
+        int i,j;
+        FILE *fp;
 
-    if (file == NULL) return -1;
+        if (file == NULL) return -1;
 
-    if ((fp = fopen(file, "rb")) == NULL) {
-        fprintf(stderr, "Could not open file '%s': %s\n", file,
-            strerror(errno));
-        fprintf(stderr, "Generating default state instead.\n");
-        return -1;
-    }
+        if ((fp = fopen(file, "rb")) == NULL) {
+            fprintf(stderr, "Could not open file '%s': %s\n", file,
+                strerror(errno));
+            fprintf(stderr, "Generating default state instead.\n");
+            return -1;
+        }
 
-    fread(&i, sizeof(int), 1, fp);
-    fread(&j, sizeof(int), 1, fp);
-    float xl, yl;
-    fread(&xl, sizeof(float), 1, fp);
-    fread(&yl, sizeof(float), 1, fp);
+        fread(&i, sizeof(int), 1, fp);
+        fread(&j, sizeof(int), 1, fp);
+        float xl, yl;
+        fread(&xl, sizeof(float), 1, fp);
+        fread(&yl, sizeof(float), 1, fp);
 
-    if (i!=imax || j!=jmax) {
-        fprintf(stderr, "Warning: imax/jmax have wrong values in %s\n", file);
-        fprintf(stderr, "%s's imax = %d, jmax = %d\n", file, i, j);
-        fprintf(stderr, "Program's imax = %d, jmax = %d\n", imax, jmax);
-        return 1;
-    }
-    if (xl!=xlength || yl!=ylength) {
-        fprintf(stderr, "Warning: xlength/ylength have wrong values in %s\n", file);
-        fprintf(stderr, "%s's xlength = %g,  ylength = %g\n", file, xl, yl);
-        fprintf(stderr, "Program's xlength = %g, ylength = %g\n", xlength,
-            ylength);
-        return 1;
-    }
+        if (i!=gimax || j!=gjmax) {
+            fprintf(stderr, "Warning: gimax/gjmax have wrong values in %s\n", file);
+            fprintf(stderr, "%s's gimax = %d, gjmax = %d\n", file, i, j);
+            fprintf(stderr, "Program's gimax = %d, gjmax = %d\n", gimax, gjmax);
+            return 1;
+        }
+        if (xl!=xlength || yl!=ylength) {
+            fprintf(stderr, "Warning: xlength/ylength have wrong values in %s\n", file);
+            fprintf(stderr, "%s's xlength = %g,  ylength = %g\n", file, xl, yl);
+            fprintf(stderr, "Program's xlength = %g, ylength = %g\n", xlength,
+                ylength);
+            return 1;
+        }
 
-    for (i=0; i<imax+2; i++) {
-        fread(u[i], sizeof(float), jmax+2, fp);
-        fread(v[i], sizeof(float), jmax+2, fp);
-        fread(p[i], sizeof(float), jmax+2, fp);
-        fread(flag[i], sizeof(char), jmax+2, fp);
-    }
-    fclose(fp);
-    return 0;
+        int perproc = gimax / nprocs;
+        int diff = gimax - (perproc * nprocs);
+        int offset, byteoffset = 0;
+
+        /* Calculate the offset in bytes for proc = 1 */
+        offset = i*perproc + diff;
+        byteoffset += offset * (sizeof(float) * 3);
+        byteoffset += offset * (sizeof(char) * 1);
+        /* Seek to offset */
+        fseek(fp, byteoffset, SEEK_SET);
+
+        /* Read in data for each process, starting at proc 1 */
+        for (i=1; i<nprocs; i++) {
+            for (j=0; j<perproc; j++) {
+                fread(u[j], sizeof(float), gjmax+2, fp);
+                fread(v[j], sizeof(float), gjmax+2, fp);
+                fread(p[j], sizeof(float), gjmax+2, fp);
+                fread(flag[j], sizeof(char), gjmax+2, fp);
+
+                send_matrix(u, MPI_FLOAT, perproc, gjmax, i);
+                send_matrix(v, MPI_FLOAT, perproc, gjmax, i);
+                send_matrix(p, MPI_FLOAT, perproc, gjmax, i);
+                send_matrix(flag, MPI_CHAR, perproc, gjmax, i);
+            }
+        }
+        fclose(fp);
+        fprintf(stderr, "Proc %d has imax %d\n", proc, perproc + diff);
+        return 0;
+    } else {
+        int imax = iright - ileft;
+
+        receive_matrix(u, MPI_FLOAT, imax, gjmax, 0);
+        receive_matrix(v, MPI_FLOAT, imax, gjmax, 0);
+        receive_matrix(p, MPI_FLOAT, imax, gjmax, 0);
+        receive_matrix(flag, MPI_CHAR, imax, gjmax, 0);
+
+        fprintf(stderr, "Proc %d has imax %d\n", proc, imax);
+    }  
+}
+
+void send_matrix(void *matrix, MPI_Datatype type, int imax, int jmax, int to) {
+
+}
+
+void receive_matrix(void *matrix, MPI_Datatype type, int imax, int jmax, int from) {
+
 }
 
 static void print_usage(void)
