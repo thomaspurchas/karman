@@ -7,7 +7,7 @@
 #define max(x,y) ((x)>(y)?(x):(y))
 #define min(x,y) ((x)<(y)?(x):(y))
 
-extern int *ileft, *iright;
+extern int ileft, iright;
 extern int nprocs, proc;
 
 /* Computation of tentative velocity field (f, g) */

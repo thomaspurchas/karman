@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "mpi.h"
+
 /* Allocate memory for a rows*cols array of floats.
  * The elements within a column are contiguous in memory, and columns
  * themselves are also contiguous in memory.
@@ -51,25 +53,33 @@ void free_matrix(void *m)
 /* Calcualates the number of blocks, and their respective widths
    Returns the start and stop index of block
  */
-void partition(int proc, int nprocs, int imax,
-    int *ileft, int *iright)
+void partition(int nprocs, int proc, int imax,
+    int *ileft, int *iright, int *neighbours)
 {
     if (nprocs < 2) {
         *ileft = 0;
         *iright = imax;
+        neighbours[0] = MPI_PROC_NULL;
+        neighbours[1] = MPI_PROC_NULL;
         return;
     } else {
-        imax += 1;
         int perproc = imax / nprocs;
-        int diff = imax - (perproc * nprocs);
+        int diff = imax - (perproc * nprocs) + 2;
 
         fprintf(stderr, "Perproc is %d. Diff is %d. imax is %d\n", perproc, diff, imax);
 
         *ileft = (proc * perproc) + diff;
-        *iright = ((proc * perproc) + perproc - 1) + diff;
+        *iright = *ileft + perproc;
+
+        neighbours[0] = proc - 1;
+        neighbours[1] = proc + 1;
 
         if (proc == 0) {
             *ileft = 0;
+            neighbours[0] = MPI_PROC_NULL;
+        }
+        if (proc ==  nprocs - 1) {
+            neighbours[1] = MPI_PROC_NULL;
         }
     }
 }

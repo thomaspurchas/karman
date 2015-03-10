@@ -2,6 +2,11 @@
 #include <string.h>
 #include "datadef.h"
 
+#include "mpi.h"
+
+extern int nprocs, proc;
+extern int neighbours[2];
+
 /* Given the boundary conditions defined by the flag matrix, update
  * the u and v velocities. Also enforce the boundary conditions at the
  * edges of the matrix.
@@ -11,15 +16,22 @@ void apply_boundary_conditions(float **u, float **v, char **flag,
 {
     int i, j;
 
-    for (j=0; j<=jmax+1; j++) {
-        /* Fluid freely flows in from the west */
-        u[0][j] = u[1][j];
-        v[0][j] = v[1][j];
+    if (neighbours[0] == MPI_PROC_NULL) {
+        for (j=0; j<=jmax+1; j++) {
+            /* Fluid freely flows in from the west */
+            u[0][j] = u[1][j];
+            v[0][j] = v[1][j];
+        }
+    }
 
+    if (neighbours[1] == MPI_PROC_NULL){
+        for (j=0; j<=jmax+1; j++) {
         /* Fluid freely flows out to the east */
         u[imax][j] = u[imax-1][j];
         v[imax+1][j] = v[imax][j];
+        }
     }
+
 
     for (i=0; i<=imax+1; i++) {
         /* The vertical velocity approaches 0 at the north and south
@@ -91,9 +103,11 @@ void apply_boundary_conditions(float **u, float **v, char **flag,
     /* Finally, fix the horizontal velocity at the  western edge to have
      * a continual flow of fluid into the simulation.
      */
-    v[0][0] = 2*vi-v[1][0];
-    for (j=1;j<=jmax;j++) {
-        u[0][j] = ui;
-        v[0][j] = 2*vi-v[1][j];
+    if (neighbours[0] == MPI_PROC_NULL) {
+        v[0][0] = 2*vi-v[1][0];
+        for (j=1;j<=jmax;j++) {
+            u[0][j] = ui;
+            v[0][j] = 2*vi-v[1][j];
+        }
     }
 }
