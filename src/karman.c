@@ -173,7 +173,12 @@ int main(int argc, char *argv[])
     delx = xlength/imax;
     dely = ylength/jmax;
 
-    fprintf(stderr, "ileft is %d. iright is %d. imax is %d\n", ileft, iright, imax);
+    if (proc == 0) {
+        fprintf(stderr, "Number of processes = %d\n", nprocs);
+    }
+    if (verbose > 1) {
+        fprintf(stderr, "ileft is %d. iright is %d. imax is %d\n", ileft, iright, imax);
+    }
 
     /* Allocate arrays */
     v    = alloc_floatmatrix(imax+2, jmax+2);
