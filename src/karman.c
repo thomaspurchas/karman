@@ -122,10 +122,12 @@ int main(int argc, char *argv[])
                 verbose = atoi(optarg);
                 break;
             case 'x':
-                imax = atoi(optarg);
+                gimax = atoi(optarg);
+                imax = gimax;
                 break;
             case 'y':
-                jmax = atoi(optarg);
+                gjmax = atoi(optarg);
+                jmax = gjmax;
                 break;
             case 'i':
                 free(infile);
