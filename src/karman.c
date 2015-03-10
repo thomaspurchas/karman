@@ -228,12 +228,12 @@ int main(int argc, char *argv[])
     /* Main loop */
     for (t = 0.0; t < t_end; t += del_t, iters++) {
         set_timestep_interval(&del_t, imax, jmax, delx, dely, u, v, Re, tau);
-        fprintf(stderr, "%d: Calculated timestep at %f\n", proc, del_t);
+        // fprintf(stderr, "%d: Calculated timestep at %f\n", proc, del_t);
         /* Each process will have calculated a different time step
            now pick the lowest timestep, and use it in every process
         */
         MPI_Allreduce(MPI_IN_PLACE, &del_t, 1, MPI_FLOAT, MPI_MIN, MPI_COMM_WORLD);
-        if (proc == 0) {
+        if (proc == 0 && verbose > 1) {
             fprintf(stderr, "Time step is: %f\n", del_t);
         }
 
@@ -320,19 +320,25 @@ void write_bin(float **u, float **v, float **p, char **flag,
             }
             for (j=0;j<thisproc;j++) {
                 if (i > 0) {
-                    fprintf(stderr, "%d: receving column %d\n", proc, i);
+                    if (verbose > 1) {
+                        fprintf(stderr, "%d: receving column %d\n", proc, i);
+                    }
                     receive_column(u[j], MPI_FLOAT, gjmax+2, j+1, i);
                     receive_column(v[j], MPI_FLOAT, gjmax+2, j+1, i);
                     receive_column(p[j], MPI_FLOAT, gjmax+2, j+1, i);
                     receive_column(flag[j], MPI_CHAR, gjmax+2, j+1, i);
-                    fprintf(stderr, "%d: receved column %d\n", proc, i);
+                    if (verbose > 1) {
+                        fprintf(stderr, "%d: receved column %d\n", proc, i);
+                    }
                 }
                 fwrite(u[j], sizeof(float), gjmax+2, fp);
                 fwrite(v[j], sizeof(float), gjmax+2, fp);
                 fwrite(p[j], sizeof(float), gjmax+2, fp);
                 fwrite(flag[j], sizeof(char), gjmax+2, fp);
             }
-            fprintf(stderr, "Got data from %d\n", i);
+            if (verbose > 1) {
+                fprintf(stderr, "Got data from %d\n", i);
+            }
         }
         fclose(fp);
 
@@ -343,7 +349,9 @@ void write_bin(float **u, float **v, float **p, char **flag,
         MPI_Status statuses[4];
 
         for (i=1; i<imax+1; i++) {
-            fprintf(stderr, "%d: sending column %d\n", proc, i);
+            if (verbose > 1) {
+                fprintf(stderr, "%d: sending column %d\n", proc, i);
+            }
             send_column(u[i], MPI_FLOAT, gjmax+2, i, 0, &requests[0]);
             send_column(v[i], MPI_FLOAT, gjmax+2, i, 0, &requests[1]);
             send_column(p[i], MPI_FLOAT, gjmax+2, i, 0, &requests[2]);
@@ -351,7 +359,9 @@ void write_bin(float **u, float **v, float **p, char **flag,
             
             MPI_Waitall(4, requests, statuses);
 
-            fprintf(stderr, "%d: sent column %d\n", proc, i);
+            if (verbose > 1) {
+                fprintf(stderr, "%d: sent column %d\n", proc, i);
+            }
         }
 
         fprintf(stderr, "%d: Finished sending data\n", proc);
@@ -414,8 +424,8 @@ int read_bin(float **u, float **v, float **p, char **flag,
         /* Seek to offset */
         offset = ftell(fp);
         fseek(fp, byteoffset, SEEK_CUR);
-        fprintf(stderr, "Offset is %d\n", ftell(fp));
-        fprintf(stderr, "Perproc is %d\n", perproc);
+        // fprintf(stderr, "Offset is %d\n", ftell(fp));
+        // fprintf(stderr, "Perproc is %d\n", perproc);
         /* Read in data for each process, starting at proc 1 */
         for (i=1; i<nprocs; i++) {
             // fprintf(stderr, "Read from %l to",  ftell(fp));
@@ -434,7 +444,7 @@ int read_bin(float **u, float **v, float **p, char **flag,
 
                 MPI_Waitall(4, requests, statuses);
             }
-            fprintf(stderr, "File location: %d\n", ftell(fp));
+            // fprintf(stderr, "File location: %d\n", ftell(fp));
         }
         /* Read in data for proc 0 now */
         fseek(fp, offset, SEEK_SET);
@@ -444,7 +454,7 @@ int read_bin(float **u, float **v, float **p, char **flag,
             fread(p[j], sizeof(float), gjmax+2, fp);
             fread(flag[j], sizeof(char), gjmax+2, fp);
         }
-        fprintf(stderr, "File location: %d\n", ftell(fp));
+        // fprintf(stderr, "File location: %d\n", ftell(fp));
 
         fclose(fp);
         // fprintf(stderr, "Proc %d has imax %d\n", proc, perproc + diff);
@@ -457,9 +467,13 @@ int read_bin(float **u, float **v, float **p, char **flag,
             receive_column(v[i], MPI_FLOAT, gjmax+2, i, 0);
             receive_column(p[i], MPI_FLOAT, gjmax+2, i, 0);
             receive_column(flag[i], MPI_CHAR, gjmax+2, i, 0);
-            fprintf(stderr, "Proc %d got column %d\n", proc, i);
+            if (verbose > 1) {
+                fprintf(stderr, "Proc %d got column %d\n", proc, i);
+            }
         }
-        fprintf(stderr, "Proc %d has data\n", proc);
+        if (verbose > 1) {
+            fprintf(stderr, "Proc %d has data\n", proc);
+        }
 
         return 0;
     }  
